@@ -1,0 +1,64 @@
+name: 构建并上传 APK
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 设置 JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        
+    - name: 设置 Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: 授予 gradlew 执行权限
+      run: chmod +x source/gradlew
+      working-directory: ${{ github.workspace }}
+      
+    - name: 缓存 Gradle 依赖
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          source/.gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('source/**/*.gradle*', 'source/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+          
+    - name: 构建所有 Release APK 变体
+      run: |
+        cd source
+        ./gradlew assembleRelease --no-daemon --stacktrace
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx4096m"
+        
+    - name: 列出生成的 APK 文件
+      run: |
+        cd source
+        echo "=== 生成的 APK 文件列表 ==="
+        find app/build/outputs/apk -name "*.apk" -type f | sort
+        echo "=== APK 文件总数 ==="
+        find app/build/outputs/apk -name "*.apk" -type f | wc -l
+        
+    - name: 上传所有 APK 到 Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-apks
+        path: source/app/build/outputs/apk/**/*.apk
+        retention-days: 30
+        if-no-files-found: error
+
